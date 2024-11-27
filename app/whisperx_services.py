@@ -232,16 +232,6 @@ def align_whisper_output(
 
 
 def process_audio_common(params: SpeechToTextProcessingParams, session):
-    """
-    Process an audio clip to generate a transcript with speaker labels.
-
-    Args:
-        audio (Audio): The input audio
-        identifier (str): The identifier for the request
-
-    Returns:
-        None: The result is saved in the transcription requests dict.
-    """
     try:
         start_time = datetime.now()
         logger.info(
@@ -249,18 +239,7 @@ def process_audio_common(params: SpeechToTextProcessingParams, session):
             params.identifier,
         )
 
-        logger.debug(
-            "Transcription parameters - task: %s, language: %s, batch_size: %d, model: %s, device: %s, device_index: %d, compute_type: %s, threads: %d",
-            params.whisper_model_params.task,
-            params.whisper_model_params.language,
-            params.whisper_model_params.batch_size,
-            params.whisper_model_params.model,
-            params.whisper_model_params.device,
-            params.whisper_model_params.device_index,
-            params.whisper_model_params.compute_type,
-            params.whisper_model_params.threads,
-        )
-
+        # 第一步：语音转文字
         segments_before_alignment = transcribe_with_whisper(
             audio=params.audio,
             task=params.whisper_model_params.task,
@@ -275,13 +254,7 @@ def process_audio_common(params: SpeechToTextProcessingParams, session):
             threads=params.whisper_model_params.threads,
         )
 
-        logger.debug(
-            "Alignment parameters - align_model: %s, interpolate_method: %s, return_char_alignments: %s, language_code: %s",
-            params.alignment_params.align_model,
-            params.alignment_params.interpolate_method,
-            params.alignment_params.return_char_alignments,
-            segments_before_alignment["language"],
-        )
+        # 第二步：音频对齐
         segments_transcript = align_whisper_output(
             transcript=segments_before_alignment["segments"],
             audio=params.audio,
@@ -291,31 +264,18 @@ def process_audio_common(params: SpeechToTextProcessingParams, session):
             return_char_alignments=params.alignment_params.return_char_alignments,
         )
         transcript = AlignedTranscription(**segments_transcript)
-        # removing words within each segment that have missing start, end, or score values
         transcript = filter_aligned_transcription(transcript).model_dump()
 
-        logger.debug(
-            "Diarization parameters - device: %s, min_speakers: %s, max_speakers: %s",
-            params.whisper_model_params.device,
-            params.diarization_params.min_speakers,
-            params.diarization_params.max_speakers,
-        )
-        diarization_segments = diarize(
-            params.audio,
-            device=params.whisper_model_params.device,
-            min_speakers=params.diarization_params.min_speakers,
-            max_speakers=params.diarization_params.max_speakers,
-        )
+        # 直接使用转录结果，跳过说话人分离
+        result = transcript
 
-        logger.debug("Starting to combine transcript with diarization results")
-        result = assign_word_speakers(diarization_segments, transcript)
-
+        # 不再删除 words 信息，保留完整的时间戳
+        # 只添加默认说话人标签
         for segment in result["segments"]:
-            del segment["words"]
-
-        del result["word_segments"]
-
-        logger.debug("Completed combining transcript with diarization results")
+            segment["speaker"] = "SPEAKER_01"
+            if "words" in segment:
+                for word in segment["words"]:
+                    word["speaker"] = "SPEAKER_01"
 
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
