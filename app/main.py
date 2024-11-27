@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Config
 from .db import engine
@@ -90,6 +91,13 @@ app = FastAPI(
 app.include_router(stt.stt_router)
 app.include_router(task.task_router)
 app.include_router(stt_services.service_router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/", response_class=RedirectResponse, include_in_schema=False)
